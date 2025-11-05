@@ -4,15 +4,16 @@ from AnswerChecker import check_answer
 
 EQ_KEY  = "ac_equation"
 ANS_KEY = "ac_answer"
+FOCUS_FLAG = "_focus_equation"
 
 def _ensure_state():
     if "player_points" not in st.session_state:
         st.session_state.player_points = 0
     st.session_state.setdefault(EQ_KEY, "")
     st.session_state.setdefault(ANS_KEY, "")
+    st.session_state.setdefault(FOCUS_FLAG, False)
 
 def _submit_answer():
-    """Runs on Enter in the Answer box and on button click."""
     eq = st.session_state.get(EQ_KEY, "").strip()
     ans = st.session_state.get(ANS_KEY, "").strip()
 
@@ -27,25 +28,25 @@ def _submit_answer():
         return
 
     if ok:
-        # Award point and clear BOTH fields to move on to next problem
         st.session_state.player_points += 1
         st.success("✅ Correct! +1 point")
+        # clear both fields, move focus back to Equation
         st.session_state[EQ_KEY] = ""
         st.session_state[ANS_KEY] = ""
+        st.session_state[FOCUS_FLAG] = True
     else:
-        # Keep the equation, clear only the answer for a quick retry
         st.error("❌ Incorrect! Try again.")
+        # keep equation, clear only answer
         st.session_state[ANS_KEY] = ""
 
 def render_answer_checker():
     _ensure_state()
-
     st.subheader("Answer Checker")
 
-    # Keep this basic; we only auto-submit from the Answer field
+    # Equation field
     st.text_input("Equation", placeholder="e.g., 4+4", key=EQ_KEY)
 
-    # Pressing Enter here submits; button below does the same
+    # Answer field (ENTER = submit)
     st.text_input(
         "Your Answer",
         placeholder="e.g., 8",
@@ -55,3 +56,16 @@ def render_answer_checker():
 
     if st.button("Check Answer"):
         _submit_answer()
+
+    # If flagged, re-focus the Equation box after a correct answer
+    if st.session_state.get(FOCUS_FLAG):
+        st.session_state[FOCUS_FLAG] = False
+        st.markdown(
+            """
+            <script>
+            const eqInput = document.querySelector('input[aria-label="Equation"]');
+            if (eqInput) { eqInput.focus(); }
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
