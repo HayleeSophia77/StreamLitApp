@@ -12,7 +12,7 @@ ANS_KEY    = "ef_answer_input"
 SCORE_KEY  = "ef_score"
 START_KEY  = "ef_start"
 ACTIVE_KEY = "ef_active"
-FOCUS_ANS  = "_ef_focus_answer"   # flag to focus Answer box
+FOCUS_ANS  = "_ef_focus_answer"  # flag to focus the Answer box
 
 def _ensure_state():
     if "player_points" not in st.session_state:
@@ -36,40 +36,53 @@ def _start_game():
     st.session_state[NUMS_KEY] = random.sample(range(1, 13), total)
     st.session_state[IDX_KEY] = 0
     st.session_state[ANS_KEY] = ""
-    st.session_state[FOCUS_ANS] = True  # focus answer when starting
+    st.session_state[FOCUS_ANS] = True  # focus when starting
 
 def _end_game():
     st.session_state.player_points += st.session_state[SCORE_KEY]
     st.session_state[ACTIVE_KEY] = False
+
+def _problem_for(idx):
+    """Return (idx+1, total, first, op, second, correct) for the current item."""
+    total = int(st.session_state[TOT_KEY])
+    base  = int(st.session_state[BASE_KEY])
+    op    = st.session_state[OP_KEY]
+    n     = st.session_state[NUMS_KEY][idx]
+
+    # Display-friendly operands + correct value
+    if op == "+":
+        first, second = base, n
+        correct = first + second
+    elif op == "-":
+        # Keep results simple/positive: (n + base) - base = n
+        first, second = n + base, base
+        correct = first - second  # = n
+    elif op == "*":
+        first, second = base, n
+        correct = first * second
+    elif op == "/":
+        # Ensure divisible: (n * base) / base = n
+        first, second = n * base, base
+        correct = first / second  # = n
+    else:
+        first, second = base, n
+        correct = first * second
+
+    return (idx + 1, total, first, op, second, float(correct))
 
 def _current_problem():
     idx = st.session_state[IDX_KEY]
     total = int(st.session_state[TOT_KEY])
     if idx >= total:
         return None
-    base = int(st.session_state[BASE_KEY])
-    op = st.session_state[OP_KEY]
-    n = st.session_state[NUMS_KEY][idx]
-    # compute correct answer
-    if op == "+":
-        correct = base + n
-    elif op == "-":
-        correct = (n + base) - base  # always positive left-side
-        correct = n  # but we use expression display below; compute separately
-        correct = (n + base) - base
-    elif op == "*":
-        correct = base * n
-    elif op == "/":
-        correct = (n * base) / base
-    else:
-        correct = base * n
-    return (idx+1, total, base, op, n, correct)
+    return _problem_for(idx)
 
 def _submit_answer():
     prob = _current_problem()
     if not prob:
         return
-    _, total, base, op, n, correct = prob
+    _, total, first, op, second, correct = prob
+
     ans_str = st.session_state.get(ANS_KEY, "").strip()
     if ans_str == "":
         st.warning("Please enter an answer.")
@@ -78,43 +91,44 @@ def _submit_answer():
 
     try:
         user_val = float(ans_str)
-        corr_val = float(correct)
     except Exception:
         st.error("Please enter a valid number.")
         st.session_state[FOCUS_ANS] = True
         return
 
-    if math.isclose(user_val, corr_val, rel_tol=1e-2, abs_tol=1e-2):
+    if math.isclose(user_val, correct, rel_tol=1e-2, abs_tol=1e-2):
         st.success("✅ Correct!")
         st.session_state[SCORE_KEY] += 1
     else:
-        st.error(f"❌ Wrong. Correct answer: {corr_val}")
+        st.error(f"❌ Wrong. Correct answer: {correct:g}")
 
+    # Advance
     st.session_state[IDX_KEY] += 1
-    st.session_state[ANS_KEY] = ""  # clear for next
+    st.session_state[ANS_KEY] = ""
 
+    # End or focus for next
     if st.session_state[IDX_KEY] >= total:
         st.success(f"Game Over! Score: {st.session_state[SCORE_KEY]}/{total}")
         _end_game()
     else:
-        st.session_state[FOCUS_ANS] = True  # focus for next question
+        st.session_state[FOCUS_ANS] = True
 
 def _focus_answer_input():
-    # Robust focus for the "Answer" input
+    # Robustly focus the "Answer" input using a component (works on Cloud)
     html("""
         <script>
         (function(){
           const doc = window.parent.document;
           const tryFocus = () => {
-            // Prefer label match
-            let input = Array.from(doc.querySelectorAll('label'))
-              .find(l => /Answer/i.test(l.textContent));
-            if (input) {
-              input = input.parentElement?.querySelector('input');
+            // Prefer matching the "Answer" label
+            let lbl = Array.from(doc.querySelectorAll('label')).find(l => /\\bAnswer\\b/i.test(l.textContent));
+            if (lbl) {
+              let input = lbl.parentElement?.querySelector('input');
               if (input) { input.focus(); input.select && input.select(); return true; }
             }
-            // Fallback: first text input on the page
-            const any = Array.from(doc.querySelectorAll('input')).find(el => el.type === 'text');
+            // Fallback: first visible text input on the page
+            const any = Array.from(doc.querySelectorAll('input'))
+              .find(el => el.type === 'text' && el.offsetParent !== null);
             if (any) { any.focus(); any.select && any.select(); return true; }
             return false;
           };
@@ -140,32 +154,26 @@ def render_electro_flash():
     if b1.button("Start Game"):
         _start_game()
     if b2.button("Reset"):
-        _ensure_state()
+        # Soft reset: reinitialize and stop the game
+        st.session_state[ACTIVE_KEY] = False
+        st.session_state[IDX_KEY] = 0
+        st.session_state[NUMS_KEY] = []
+        st.session_state[SCORE_KEY] = 0
+        st.session_state[ANS_KEY] = ""
+        st.session_state[FOCUS_ANS] = False
 
     if st.session_state[ACTIVE_KEY]:
         prob = _current_problem()
         if prob:
-            idx, total, base, op, n, correct = prob
-            # Display expression nicely (add/sub/div logic to match console version)
-            if op == "+":
-                first, second = base, n
-            elif op == "-":
-                first, second = n + base, base
-            elif op == "*":
-                first, second = base, n
-            elif op == "/":
-                first, second = n * base, base
-            else:
-                first, second = base, n
-
+            idx, total, first, op, second, _ = prob
             st.markdown(f"### Problem {idx}/{total}: **{first} {op} {second} = ?**")
 
-            # ENTER submits; button does the same
+            # Enter submits; button does the same
             st.text_input("Answer", key=ANS_KEY, on_change=_submit_answer)
             if st.button("Submit"):
                 _submit_answer()
 
-            # focus Answer when flagged
+            # focus the Answer input when flagged
             if st.session_state.get(FOCUS_ANS):
                 st.session_state[FOCUS_ANS] = False
                 _focus_answer_input()
