@@ -6,22 +6,22 @@ from electro_flash_ui import render_electro_flash
 
 st.set_page_config(page_title="Datamon Web", page_icon="🧮")
 
-# Remember selected section across reruns
+st.title("🧮 Datamon — Web Edition")
+
+# Sidebar: points + section selector (keeps the main area stable on rerun)
+if "player_points" not in st.session_state:
+    st.session_state.player_points = 0
+
+st.sidebar.header("Player Points")
+st.sidebar.metric("Total Points", st.session_state.player_points)
+
 SECTIONS = ["Answer Checker", "Memory Bank", "Electro Flash"]
 st.session_state.setdefault("active_section", SECTIONS[0])
 
-st.title("🧮 Datamon — Web Edition")
-st.sidebar.header("Player Points")
-if "player_points" not in st.session_state:
-    st.session_state.player_points = 0
-st.sidebar.metric("Total Points", st.session_state.player_points)
-
-# Controlled navigation (no more tab snap-back)
-choice = st.radio(
+choice = st.sidebar.radio(
     "Sections",
     SECTIONS,
     index=SECTIONS.index(st.session_state["active_section"]),
-    horizontal=True,
 )
 st.session_state["active_section"] = choice
 
